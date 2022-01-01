@@ -48,3 +48,10 @@ Build an PBE-GGA model from the specified atoms.
 function model_PBE(lattice::AbstractMatrix, atoms::Vector; kwargs...)
     model_DFT(lattice, atoms, [:gga_x_pbe, :gga_c_pbe]; kwargs...)
 end
+
+"""
+Build a Hybrid model from the specified functionals and their respective weightings.
+"""
+function model_Hybrid(lattice::AbstractMatrix, atoms::Vector, functionals, weights; kwargs...)
+    model_DFT(lattice, atoms, ; kwargs...)
+end
