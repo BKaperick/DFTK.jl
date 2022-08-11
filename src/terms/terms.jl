@@ -114,3 +114,13 @@ as a 4D (i,j,k,σ) array.
     δV
 end
 apply_kernel(::Term, ::AbstractBasis, δρ; kwargs...) = nothing  # by default, no kernel
+
+@doc raw"""
+    local_potential(term::Term)
+
+Computes the local potential of this term
+"""
+function local_potential(term::Term, basis::PlaneWaveBasis, ψ, occ; kwargs...)
+    (E, Ham) = ene_ops(term, basis, ψ, occ; kwargs...);
+    total_local_potential(Ham);
+end
