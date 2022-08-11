@@ -35,7 +35,7 @@ function high_symmetry_kpath(model; kline_density=40)
     # - spglib uses this convention for the returned conventional lattice,
     #   so it can be directly used as input to Brillouin.jl
     # - The output k-Points and reciprocal lattices will be in the CDML convention.
-    conv_latt = get_spglib_lattice(model; to_primitive=false)
+    conv_latt = spglib_standardize_cell(model; primitive=false,correct_symmetry=false).lattice
     sgnum     = spglib_spacegroup_number(model)  # Get ITA space-group number
     direct_basis   = Bravais.DirectBasis(collect(eachcol(conv_latt)))
     primitive_latt = Bravais.primitivize(direct_basis, Bravais.centering(sgnum, 3))
@@ -75,9 +75,9 @@ end
                                n_bands=default_n_bands_bandstructure(basis.model),
                                ρ=nothing, eigensolver=lobpcg_hyper,
                                tol=1e-3, show_progress=true, kwargs...)
-    # Create basis with new kpoints, where we cheat by not using any symmetry operations.
-    ksymops  = [[identity_symop()] for _ in 1:length(kcoords)]
-    bs_basis = PlaneWaveBasis(basis, kcoords, ksymops)
+    # Create basis with new kpoints, without any symmetry operations.
+    kweights = ones(length(kcoords)) ./ length(kcoords)
+    bs_basis = PlaneWaveBasis(basis, kcoords, kweights)
 
     if isnothing(ρ)
         if any(t isa TermNonlinear for t in basis.terms)
@@ -139,7 +139,8 @@ function prepare_band_data(band_data; datakeys=[:λ, :λerror],
     n_bands  = nothing
 
     # Convert coordinates to Cartesian
-    kcoords_cart = [basis.kpoints[ik].coordinate_cart for ik in krange_spin(basis, 1)]
+    kcoords_cart = [basis.model.recip_lattice * basis.kpoints[ik].coordinate
+                    for ik in krange_spin(basis, 1)]
     klabels_cart = Dict(lal => basis.model.recip_lattice * vec for (lal, vec) in klabels)
 
     # Split data into branches

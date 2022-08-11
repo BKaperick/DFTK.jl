@@ -79,14 +79,11 @@ struct Applyχ0Model <: χ0Model
     kwargs_apply_χ0
 end
 Applyχ0Model(; kwargs_apply_χ0...) = Applyχ0Model(kwargs_apply_χ0)
-function (χ0::Applyχ0Model)(basis; ham, eigenvalues, ψ, εF, n_ep_extra, kwargs...)
-    # self_consistent_field uses a few extra bands, which are not converged by the eigensolver
-    # For the χ0 application, bands need to be perfectly converged, so we discard them here
-    ψ_cvg = [@view ψk[:, 1:end-n_ep_extra]  for ψk in ψ]
-    eigenvalues_cvg = [εk[1:end-n_ep_extra] for εk in eigenvalues]
-
+function (χ0::Applyχ0Model)(basis; ham, eigenvalues, ψ, occupation, εF,
+                            kwargs...)
     function apply!(δρ, δV, α=1)
-        χ0δV = apply_χ0(ham, ψ_cvg, εF, eigenvalues_cvg, δV; χ0.kwargs_apply_χ0...)
+        χ0δV = apply_χ0(ham, ψ, occupation, εF, eigenvalues, δV;
+                        χ0.kwargs_apply_χ0...)
         δρ .+= α .* χ0δV
     end
 end

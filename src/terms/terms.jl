@@ -44,11 +44,12 @@ breaks_symmetries(::ExternalFromFourier) = true
 
 include("nonlocal.jl")
 include("hartree.jl")
-include("power_nonlinearity.jl")
+include("local_nonlinearity.jl")
 include("xc.jl")
 include("ewald.jl")
 include("psp_correction.jl")
 include("entropy.jl")
+include("pairwise.jl")
 
 include("magnetic.jl")
 breaks_symmetries(::Magnetic) = true
@@ -56,7 +57,7 @@ breaks_symmetries(::Magnetic) = true
 include("anyonic.jl")
 breaks_symmetries(::Anyonic) = true
 
-# forces computes either nothing or an array forces[el][at][α]
+# forces computes either nothing or an array forces[at][α]
 compute_forces(::Term, ::AbstractBasis, ψ, occ; kwargs...) = nothing  # by default, no force
 
 @doc raw"""
@@ -98,16 +99,28 @@ as a 4D (i,j,k,σ) array.
     n_spin = basis.model.n_spin_components
     @assert 1 ≤ n_spin ≤ 2
 
-    δV = zero(δρ)
-    for term in basis.terms
-        # Skip XC term if RPA is selected
-        RPA && term isa TermXc && continue
-
-        δV_term = apply_kernel(term, basis, δρ; kwargs...)
-        if !isnothing(δV_term)
-            δV .+= δV_term
+    if RPA
+        hartree = filter(t -> t isa TermHartree, basis.terms)
+        δV = isempty(hartree) ? zero(δρ) : apply_kernel(only(hartree), basis, δρ; kwargs...)
+    else
+        δV = zero(δρ)
+        for term in basis.terms
+            δV_term = apply_kernel(term, basis, δρ; kwargs...)
+            if !isnothing(δV_term)
+                δV .+= δV_term
+            end
         end
     end
     δV
 end
 apply_kernel(::Term, ::AbstractBasis, δρ; kwargs...) = nothing  # by default, no kernel
+
+@doc raw"""
+    local_potential(term::Term)
+
+Computes the local potential of this term
+"""
+function local_potential(term::Term, basis::PlaneWaveBasis, ψ, occ; kwargs...)
+    (E, Ham) = ene_ops(term, basis, ψ, occ; kwargs...);
+    total_local_potential(Ham);
+end

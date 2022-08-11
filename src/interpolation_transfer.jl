@@ -1,4 +1,5 @@
-using Interpolations
+import Interpolations
+import Interpolations: interpolate, extrapolate, scale, BSpline, Quadratic, OnCell
 using SparseArrays
 
 """
@@ -46,7 +47,7 @@ function interpolate_density(ρ_in::AbstractArray, grid_in, grid_out, lattice_in
 
     # interpolate ρ_in_supercell from grid grid_supercell to grid_out
     axes_in = (range(0, 1, length=grid_supercell[i]+1)[1:end-1] for i=1:3)
-    itp = interpolate(ρ_in_supercell, BSpline(Quadratic(Periodic(OnCell()))))
+    itp = interpolate(ρ_in_supercell, BSpline(Quadratic(Interpolations.Periodic(OnCell()))))
     sitp = scale(itp, axes_in...)
     ρ_interp = extrapolate(sitp, Periodic())
     ρ_out = similar(ρ_in, grid_out)
@@ -189,11 +190,7 @@ function transfer_blochwave(ψ_in, basis_in::PlaneWaveBasis{T},
     # It is then of size G_vectors(basis_out.kpoints[ik]) and the transfer can be done with
     # ψ_out[ik] .= ψ_in[ik][idcs_in[ik], :]
 
-    ψ_out = empty(ψ_in)
-    for (ik, kpt_out) in enumerate(basis_out.kpoints)
-        kpt_in = basis_in.kpoints[ik]
-        ψk_out = transfer_blochwave_kpt(ψ_in[ik], basis_in, kpt_in, basis_out, kpt_out)
-        push!(ψ_out, ψk_out)
+    map(enumerate(basis_out.kpoints)) do (ik, kpt_out)
+        transfer_blochwave_kpt(ψ_in[ik], basis_in, basis_in.kpoints[ik], basis_out, kpt_out)
     end
-    ψ_out
 end

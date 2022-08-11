@@ -4,14 +4,16 @@ with plane-wave density-functional theory algorithms.
 """
 module DFTK
 
-using Printf
-using Markdown
 using LinearAlgebra
+using Markdown
+using Printf
 using Requires
 using TimerOutputs
 using spglib_jll
 using Unitful
 using UnitfulAtomic
+using ForwardDiff
+using ChainRulesCore
 
 export Vec3
 export Mat3
@@ -19,7 +21,6 @@ export mpi_nprocs
 export mpi_master
 export setup_threading, disable_threading
 include("common/timer.jl")
-include("common/asserting.jl")
 include("common/constants.jl")
 include("common/ortho.jl")
 include("common/types.jl")
@@ -28,6 +29,7 @@ include("common/split_evenly.jl")
 include("common/mpi.jl")
 include("common/threading.jl")
 include("common/printing.jl")
+include("common/cis2pi.jl")
 
 export PspHgh
 include("pseudo/NormConservingPsp.jl")
@@ -42,6 +44,9 @@ export atomic_symbol
 export n_elec_valence
 export n_elec_core
 include("elements.jl")
+
+export SymOp
+include("SymOp.jl")
 
 export Smearing
 export Model
@@ -72,7 +77,7 @@ export Kinetic
 export ExternalFromFourier
 export ExternalFromReal
 export AtomicLocal
-export PowerNonlinearity
+export LocalNonlinearity
 export Hartree
 export Xc
 export AtomicNonlocal
@@ -80,9 +85,11 @@ export Ewald
 export PspCorrection
 export Entropy
 export Magnetic
+export PairwisePotential
 export Anyonic
 export apply_kernel
 export compute_kernel
+include("DispatchFunctional.jl")
 include("terms/terms.jl")
 
 include("occupation.jl")
@@ -105,9 +112,7 @@ include("eigen/preconditioners.jl")
 include("eigen/diag.jl")
 
 export model_atomic
-export model_DFT
-export model_PBE
-export model_LDA
+export model_DFT, model_PBE, model_LDA, model_SCAN
 include("standard_models.jl")
 
 export KerkerMixing, KerkerDosMixing, SimpleMixing, DielectricMixing
@@ -117,6 +122,7 @@ export scf_damping_solver
 export scf_anderson_solver
 export scf_CROP_solver
 export self_consistent_field
+export ResponseOptions
 export direct_minimization
 export newton
 export load_scfres, save_scfres
@@ -141,21 +147,22 @@ export guess_density
 export random_density
 export load_psp
 export list_psp
+export attach_psp
 include("guess_density.jl")
 include("pseudo/load_psp.jl")
 include("pseudo/list_psp.jl")
+include("pseudo/attach_psp.jl")
 
+export DFTKPotential
 export pymatgen_structure
 export ase_atoms
 export load_lattice
-export load_basis
-export load_model
-export load_density
 export load_atoms
+export load_positions
 export load_magnetic_moments
 export run_wannier90
-include("external/abinit.jl")
-include("external/load_from_python.jl")
+include("external/atomsbase.jl")
+include("external/interatomicpotentials.jl")
 include("external/load_from_file.jl")
 include("external/ase.jl")
 include("external/pymatgen.jl")
@@ -169,16 +176,16 @@ include("postprocess/band_structure.jl")
 export compute_forces
 export compute_forces_cart
 include("postprocess/forces.jl")
-export compute_stresses
+export compute_stresses_cart
 include("postprocess/stresses.jl")
 export compute_dos
 export compute_ldos
-export compute_nos
 export plot_dos
 include("postprocess/dos.jl")
 export compute_χ0
 export apply_χ0
-include("postprocess/chi0.jl")
+include("response/chi0.jl")
+include("response/hessian.jl")
 export compute_current
 include("postprocess/current.jl")
 
@@ -204,9 +211,6 @@ function __init__()
     @require Plots="91a5bcdd-55d7-5caf-9e0b-520d859cae80"    include("plotting.jl")
     @require JLD2="033835bb-8acc-5ee8-8aae-3f567f8a3819"     include("external/jld2io.jl")
     @require WriteVTK="64499a7a-5c06-52f2-abe2-ccb03c286192" include("external/vtkio.jl")
-    @require NCDatasets="85f8d34a-cbdd-5861-8df4-14fed0d494ab" begin
-        include("external/etsf_nanoquanta.jl")
-    end
     @require wannier90_jll="c5400fa0-8d08-52c2-913f-1e3f656c1ce9" begin
         include("external/wannier90.jl")
     end

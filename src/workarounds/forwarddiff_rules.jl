@@ -53,9 +53,9 @@ for P in [:Plan, :ScaledPlan]  # need ScaledPlan to avoid ambiguities
         Base.:*(p::AbstractFFTs.$P, x::AbstractArray{<:Complex{<:ForwardDiff.Dual}}) =
             _apply_plan(p, x)
 
-        LinearAlgebra.mul!(Y::AbstractArray, p::AbstractFFTs.$P, X::AbstractArray{<:ForwardDiff.Dual}) = 
+        LinearAlgebra.mul!(Y::AbstractArray, p::AbstractFFTs.$P, X::AbstractArray{<:ForwardDiff.Dual}) =
             (Y .= _apply_plan(p, X))
-        
+
         LinearAlgebra.mul!(Y::AbstractArray, p::AbstractFFTs.$P, X::AbstractArray{<:Complex{<:ForwardDiff.Dual}}) =
             (Y .= _apply_plan(p, X))
     end
@@ -89,7 +89,19 @@ function _apply_plan(p::AbstractFFTs.ScaledPlan{T,P,<:ForwardDiff.Dual}, x::Abst
     _apply_plan(p.p, p.scale * x)
 end
 
+# Convert and strip off duals if that's the only way
+function convert_dual(::Type{T}, x::ForwardDiff.Dual) where {T}
+    convert(T, ForwardDiff.value(x))
+end
+convert_dual(::Type{T}, x::ForwardDiff.Dual) where {T <: ForwardDiff.Dual} = convert(T, x)
+convert_dual(::Type{T}, x) where {T} = convert(T, x)
+
+
 # DFTK setup specific
+default_primes(T::Type{<:ForwardDiff.Dual}) = default_primes(ForwardDiff.valtype(T))
+function next_working_fft_size(T::Type{<:ForwardDiff.Dual}, size::Integer)
+    next_working_fft_size(ForwardDiff.valtype(T), size)
+end
 
 next_working_fft_size(::Type{<:ForwardDiff.Dual}, size::Int) = size
 
@@ -106,27 +118,127 @@ function build_fft_plans(T::Type{<:Union{ForwardDiff.Dual,Complex{<:ForwardDiff.
     ipFFT, opFFT, ipBFFT, opBFFT
 end
 
-# PlaneWaveBasis{<:Dual} contains dual-scaled fft, which means that the result f_fourier 
-# must be able to hold complex dual numbers even if f_real is not dual
-function r_to_G(basis::PlaneWaveBasis{T}, f_real::AbstractArray) where {T<:ForwardDiff.Dual}
-    f_fourier = similar(f_real, complex(T))
-    @assert length(size(f_real)) ∈ (3, 4)
-    # this exploits trailing index convention
-    for iσ = 1:size(f_real, 4)
-        @views r_to_G!(f_fourier[:, :, :, iσ], basis, f_real[:, :, :, iσ])
-    end
-    f_fourier
-end
-
 # determine symmetry operations only from primal lattice values
-function spglib_get_symmetry(lattice::Matrix{<:ForwardDiff.Dual}, atoms, magnetic_moments=[]; kwargs...)
-    spglib_get_symmetry(ForwardDiff.value.(lattice), atoms, magnetic_moments; kwargs...)
+function spglib_get_symmetry(lattice::AbstractMatrix{<:ForwardDiff.Dual}, atom_groups, positions,
+                             magnetic_moments=[]; kwargs...)
+    spglib_get_symmetry(ForwardDiff.value.(lattice), atom_groups, positions,
+                        magnetic_moments; kwargs...)
+end
+function spglib_atoms(atom_groups,
+                      positions::AbstractVector{<:AbstractVector{<:ForwardDiff.Dual}},
+                      magnetic_moments)
+    positions_value = [ForwardDiff.value.(pos) for pos in positions]
+    spglib_atoms(atom_groups, positions_value, magnetic_moments)
 end
 
 function _is_well_conditioned(A::AbstractArray{<:ForwardDiff.Dual}; kwargs...)
     _is_well_conditioned(ForwardDiff.value.(A); kwargs...)
 end
 
+value_type(T::Type{<:ForwardDiff.Dual}) = ForwardDiff.valtype(T)
+
+# TODO Should go to Model.jl / PlaneWaveBasis.jl as a constructor.
+#
+# Along with it should go a nice convert function to get rid of the annoying
+# conversion thing in the stress computation.
+#
+# Ideally also upon constructing a Model one would automatically determine that
+# *some* parameter deep inside the terms, psp or sth is a dual and automatically
+# convert the full thing to be based on dual numbers ... note that this requires
+# exposing the element type all the way up ... which is probably needed to do these
+# forward and backward conversion routines between duals and non-duals as well.
+function construct_value(model::Model{T}) where {T <: ForwardDiff.Dual}
+    newpositions = [ForwardDiff.value.(pos) for pos in model.positions]
+    Model(ForwardDiff.value.(model.lattice),
+          construct_value.(model.atoms),
+          newpositions;
+          model_name=model.model_name,
+          n_electrons=model.n_electrons,
+          magnetic_moments=[],  # Symmetries given explicitly
+          terms=model.term_types,
+          temperature=ForwardDiff.value(model.temperature),
+          smearing=model.smearing,
+          spin_polarization=model.spin_polarization,
+          symmetries=model.symmetries)
+end
+
+construct_value(el::Element) = el
+construct_value(el::ElementPsp) = ElementPsp(el.Z, el.symbol, construct_value(el.psp))
+construct_value(psp::PspHgh) = psp
+function construct_value(psp::PspHgh{T}) where {T <: ForwardDiff.Dual}
+    PspHgh(psp.Zion,
+           ForwardDiff.value(psp.rloc),
+           ForwardDiff.value.(psp.cloc),
+           psp.lmax,
+           ForwardDiff.value.(psp.rp),
+           [ForwardDiff.value.(hl) for hl in psp.h],
+           psp.identifier,
+           psp.description)
+end
+
+
+function construct_value(basis::PlaneWaveBasis{T}) where {T <: ForwardDiff.Dual}
+    new_kshift = isnothing(basis.kshift) ? nothing : ForwardDiff.value.(basis.kshift)
+    PlaneWaveBasis(construct_value(basis.model),
+                   ForwardDiff.value(basis.Ecut),
+                   map(v -> ForwardDiff.value.(v), basis.kcoords_global),
+                   ForwardDiff.value.(basis.kweights_global);
+                   basis.symmetries_respect_rgrid,
+                   fft_size=basis.fft_size,
+                   kgrid=basis.kgrid,
+                   kshift=new_kshift,
+                   variational=basis.variational,
+                   comm_kpts=basis.comm_kpts)
+end
+
+
+function self_consistent_field(basis_dual::PlaneWaveBasis{T};
+                               response=ResponseOptions(),
+                               kwargs...) where T <: ForwardDiff.Dual
+    # Note: No guarantees on this interface yet.
+
+    # Primal pass
+    basis_primal  = construct_value(basis_dual)
+    scfres = self_consistent_field(basis_primal; kwargs...)
+
+    ## Compute external perturbation (contained in ham_dual) and from matvec with bands
+    ham_dual, Hψ_dual = let
+        occupation_dual = [T.(occk) for occk in scfres.occupation]
+        ψ_dual = [Complex.(T.(real(ψk)), T.(imag(ψk))) for ψk in scfres.ψ]
+        ρ_dual = DFTK.compute_density(basis_dual, ψ_dual, occupation_dual)
+        εF_dual = T(scfres.εF)  # Only needed for entropy term
+        eigenvalues_dual = [T.(εk) for εk in scfres.eigenvalues]
+        _, ham_dual = energy_hamiltonian(basis_dual, ψ_dual, occupation_dual;
+                                         ρ=ρ_dual, eigenvalues=eigenvalues_dual, εF=εF_dual)
+        ham_dual, ham_dual * ψ_dual
+    end
+
+    ## Implicit differentiation
+    response.verbose && println("Solving response problem")
+    δresults = ntuple(ForwardDiff.npartials(T)) do α
+        δHextψ = [ForwardDiff.partials.(δHextψk, α) for δHextψk in Hψ_dual]
+        solve_ΩplusK_split(scfres, -δHextψ; tol=scfres.norm_Δρ, response.verbose)
+    end
+
+    ## Convert and combine
+    DT = ForwardDiff.Dual{ForwardDiff.tagtype(T)}
+    ψ = map(scfres.ψ, getfield.(δresults, :δψ)...) do ψk, δψk...
+        map(ψk, δψk...) do ψnk, δψnk...
+            Complex(DT(real(ψnk), real.(δψnk)),
+                    DT(imag(ψnk), imag.(δψnk)))
+        end
+    end
+    ρ = map((ρi, δρi...) -> DT(ρi, δρi), scfres.ρ, getfield.(δresults, :δρ)...)
+    eigenvalues = map(scfres.eigenvalues, getfield.(δresults, :δeigenvalues)...) do εk, δεk...
+        map((εnk, δεnk...) -> DT(εnk, δεnk), εk, δεk...)
+    end
+
+    # TODO Could add δresults[α].δVind the dual part of the total local potential in ham_dual
+    # and in this way return a ham that represents also the total change in Hamiltonian
+
+    merge(scfres, (; ψ, ρ, eigenvalues, basis=basis_dual,
+                   response=getfield.(δresults, :history)))
+end
 
 # other workarounds
 
@@ -152,4 +264,27 @@ function Smearing.occupation(S::Smearing.FermiDirac, d::ForwardDiff.Dual{T}) whe
         ∂occ = -exp(x) / (1 + exp(x))^2
     end
     ForwardDiff.Dual{T}(Smearing.occupation(S, x), ∂occ * ForwardDiff.partials(d))
+end
+
+# Fix for https://github.com/JuliaDiff/ForwardDiff.jl/issues/514
+function Base.:^(x::Complex{ForwardDiff.Dual{T,V,N}}, y::Complex{ForwardDiff.Dual{T,V,N}}) where {T,V,N}
+    xx = complex(ForwardDiff.value(real(x)), ForwardDiff.value(imag(x)))
+    yy = complex(ForwardDiff.value(real(y)), ForwardDiff.value(imag(y)))
+    dx = complex.(ForwardDiff.partials(real(x)), ForwardDiff.partials(imag(x)))
+    dy = complex.(ForwardDiff.partials(real(y)), ForwardDiff.partials(imag(y)))
+
+    expv = xx^yy
+    ∂expv∂x = yy * xx^(yy-1)
+    ∂expv∂y = log(xx) * expv
+    dxexpv = ∂expv∂x * dx
+    if iszero(xx) && ForwardDiff.isconstant(real(y)) && ForwardDiff.isconstant(imag(y)) && imag(y) === zero(imag(y)) && real(y) > 0
+        dexpv = zero(expv)
+    elseif iszero(xx)
+        throw(DomainError(x, "mantissa cannot be zero for complex exponentiation"))
+    else
+        dyexpv = ∂expv∂y * dy
+        dexpv = dxexpv + dyexpv
+    end
+    complex(ForwardDiff.Dual{T,V,N}(real(expv), ForwardDiff.Partials{N,V}(tuple(real(dexpv)...))),
+            ForwardDiff.Dual{T,V,N}(imag(expv), ForwardDiff.Partials{N,V}(tuple(imag(dexpv)...))))
 end

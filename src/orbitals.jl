@@ -1,10 +1,21 @@
-# select the occupied orbitals assuming an insulator
-function select_occupied_orbitals(basis::PlaneWaveBasis, ψ)
-    model  = basis.model
-    n_spin = model.n_spin_components
-    @assert iszero(basis.model.temperature)
-    n_bands = div(model.n_electrons, n_spin * filled_occupation(model), RoundUp)
-    [ψk[:, 1:n_bands] for ψk in ψ]
+# Returns the occupied orbitals, the occupation array and optionally the eigenvalues without
+# virtual states (or states with small occupation level for metals).
+# threshold is a parameter to distinguish between states we want to keep and the
+# others when using temperature. It is set to 0.0 by default, to treat with insulators.
+function select_occupied_orbitals(basis, ψ, occupation; threshold=0.0)
+    N = [something(findlast(x -> x > threshold, occk), 0) for occk in occupation]
+    selected_ψ   = [@view ψk[:, 1:N[ik]] for (ik, ψk)   in enumerate(ψ)]
+    selected_occ = [      occk[1:N[ik]]  for (ik, occk) in enumerate(occupation)]
+
+    # if we have an insulator, sanity check that the orbitals we kept are the
+    # occupied ones
+    if threshold == 0.0
+        model   = basis.model
+        n_spin  = model.n_spin_components
+        n_bands = div(model.n_electrons, n_spin * filled_occupation(model), RoundUp)
+        @assert n_bands == size(selected_ψ[1], 2)
+    end
+    (ψ=selected_ψ, occupation=selected_occ)
 end
 
 # Packing routines used in direct_minimization and newton algorithms.
@@ -26,15 +37,20 @@ function pack_ψ(ψ)
     vcat([vec(ψk) for ψk in ψ]...)
 end
 
-function unpack_ψ(x, sizes_ψ)
-    n_bands = sizes_ψ[1][2]
+# Returns pointers into the unpacked ψ
+# /!\ The resulting array is only valid as long as the original x is still in live memory.
+function unsafe_unpack_ψ(x, sizes_ψ)
     lengths = prod.(sizes_ψ)
     ends = cumsum(lengths)
-    # We unsafe_wrap the resulting array to avoid a complicated type for ψ.
-    # The resulting array is valid as long as the original x is still in live memory.
+    # We unsafe_wrap the resulting array to avoid a complicated type for ψ.    
     map(1:length(sizes_ψ)) do ik
         unsafe_wrap(Array{complex(eltype(x))},
                     pointer(@views x[ends[ik]-lengths[ik]+1:ends[ik]]),
                     sizes_ψ[ik])
     end
+end
+unpack_ψ(x, sizes_ψ) = deepcopy(unsafe_unpack_ψ(x, sizes_ψ))
+
+function random_orbitals(basis::PlaneWaveBasis{T}, kpt::Kpoint, howmany) where {T}
+    ortho_qr(randn(Complex{T}, length(G_vectors(basis, kpt)), howmany))
 end

@@ -6,7 +6,8 @@ using Statistics
 #
 # Accelerates the iterative solution of f(x) = 0 according to a
 # damped preconditioned scheme
-#    xₙ₊₁ = xₙ + αₙ P⁻¹ (f(xₙ) - xₙ)
+#    xₙ₊₁ = xₙ + αₙ P⁻¹ f(xₙ)
+# Where f(x) computes the residual (e.g. SCF(x) - x)
 # Further define
 #    preconditioned residual  Pf(x) = P⁻¹ f(x)
 #    fixed-point map          g(x)  = V + α Pf(x)
@@ -239,6 +240,7 @@ trial_damping(damping::FixedDamping, args...) = damping.α
     acceleration=AndersonAcceleration(;m=10),
     accept_step=ScfAcceptStepAll(),
     max_backtracks=3,  # Maximal number of backtracking line searches
+    occupation_threshold=default_occupation_threshold(),
 )
     # TODO Test other mixings and lift this
     @assert (   mixing isa SimpleMixing
@@ -260,12 +262,13 @@ trial_damping(damping::FixedDamping, args...) = damping.α
     function EVρ(Vin; diagtol=tol / 10, ψ=nothing)
         ham_V = hamiltonian_with_total_potential(ham, Vin)
         res_V = next_density(ham_V; n_bands=n_bands, ψ=ψ, n_ep_extra=n_ep_extra,
-                             miniter=diag_miniter, tol=diagtol, eigensolver=eigensolver)
+                             miniter=diag_miniter, tol=diagtol, eigensolver=eigensolver,
+                             occupation_threshold)
         new_E, new_ham = energy_hamiltonian(basis, res_V.ψ, res_V.occupation;
                                             ρ=res_V.ρout, eigenvalues=res_V.eigenvalues,
                                             εF=res_V.εF)
-        (basis=basis, ham=new_ham, energies=new_E, Vin=Vin,
-         Vout=total_local_potential(new_ham), res_V...)
+        (basis=basis, ham=new_ham, energies=new_E, occupation_threshold=occupation_threshold,
+         Vin=Vin, Vout=total_local_potential(new_ham), res_V...)
     end
 
     n_iter    = 1
@@ -273,7 +276,7 @@ trial_damping(damping::FixedDamping, args...) = damping.α
     α_trial   = trial_damping(damping)
     diagtol   = determine_diagtol((ρin=ρ, Vin=V, n_iter=n_iter))
     info      = EVρ(V; diagtol=diagtol, ψ=ψ)
-    Pinv_δV   = mix_potential(mixing, basis, info.Vout - info.Vin; info...)
+    Pinv_δV   = mix_potential(mixing, basis, info.Vout - info.Vin; n_iter, info...)
     info      = merge(info, (α=NaN, diagonalization=[info.diagonalization], ρin=ρ,
                              n_iter=n_iter, Pinv_δV=Pinv_δV))
     ΔEdown    = 0.0
@@ -306,7 +309,8 @@ trial_damping(damping::FixedDamping, args...) = damping.α
             Vnext = info.Vin .+ α .* δV
 
             info_next    = EVρ(Vnext; ψ=guess, diagtol=diagtol)
-            Pinv_δV_next = mix_potential(mixing, basis, info_next.Vout - info_next.Vin; info_next...)
+            Pinv_δV_next = mix_potential(mixing, basis, info_next.Vout - info_next.Vin;
+                                         n_iter, info_next...)
             push!(diagonalization, info_next.diagonalization)
             info_next = merge(info_next, (α=α, diagonalization=diagonalization,
                                           ρin=info.ρout, n_iter=n_iter,
@@ -344,7 +348,8 @@ trial_damping(damping::FixedDamping, args...) = damping.α
     info = (ham=ham, basis=basis, energies=info.energies, converged=converged,
             ρ=info.ρout, eigenvalues=info.eigenvalues, occupation=info.occupation,
             εF=info.εF, n_iter=n_iter, n_ep_extra=n_ep_extra, ψ=info.ψ,
-            diagonalization=info.diagonalization, stage=:finalize, algorithm="SCF")
+            diagonalization=info.diagonalization, stage=:finalize, algorithm="SCF",
+            occupation_threshold=info.occupation_threshold)
     callback(info)
     info
 end

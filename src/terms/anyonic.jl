@@ -16,13 +16,13 @@
 # This way, ρ-ρref has zero mass, and A_SR is shorter range.
 # The long-range part is computed explicitly
 
-function ρref_real(x::T, y::T, M, σ) where {T <: Real}
+function ρref_real_2D(x::T, y::T, M, σ) where {T <: Real}
     r = hypot(x, y)
     # gaussian normalized to have integral M
     M * exp(-T(1)/2 * (r/σ)^2) / (σ^2 * (2T(π))^(2/2))
 end
 
-function magnetic_field_produced_by_ρref(x::T, y::T, M, σ) where {T <: Real}
+function magnetic_potential_produced_by_ρref(x::T, y::T, M, σ) where {T <: Real}
     # The solution of ∇∧A = 2π ρref is ϕ(r) [-y;x] where ϕ satisfies
     # ∇∧A = 2ϕ + r ϕ' => rϕ' + 2 ϕ = 2π ρref
     # Wolfram alpha (after a bit of coaxing) says the solution to
@@ -31,7 +31,7 @@ function magnetic_field_produced_by_ρref(x::T, y::T, M, σ) where {T <: Real}
     # 1/x^2 (c1 - C exp(-α x^2)/2α), which coupled with smoothness at 0 gives
     # C/(2α)/x^2*(1 - exp(-α x^2))
     r = hypot(x, y)
-    r == 0 && return magnetic_field_produced_by_ρref(1e-8, 0.0, M, σ) # hack
+    r == 0 && return magnetic_potential_produced_by_ρref(1e-8, 0.0, M, σ) # hack
 
     α = 1 / (2*σ^2)
     C = 2T(π) * M / (σ^2 * (2T(π))^(2/2))
@@ -89,8 +89,8 @@ function TermAnyonic(basis::PlaneWaveBasis{T}, hbar, β) where {T}
     σ = 2
     for (ir, r) in enumerate(r_vectors(basis))
         rcart = basis.model.lattice * (r - @SVector[.5, .5, .0])
-        ρref[ir] = ρref_real(rcart[1], rcart[2], M, σ)
-        Aref[1][ir], Aref[2][ir] = magnetic_field_produced_by_ρref(rcart[1], rcart[2], M, σ)
+        ρref[ir] = ρref_real_2D(rcart[1], rcart[2], M, σ)
+        Aref[1][ir], Aref[2][ir] = magnetic_potential_produced_by_ρref(rcart[1], rcart[2], M, σ)
     end
     # Aref is not divergence-free in the finite basis, so we explicitly project it
     # This is because we assume elsewhere (eg to ensure self-adjointness of the Hamiltonian)
