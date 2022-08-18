@@ -12,7 +12,7 @@ function LibxcFunctional(identifier::Symbol)
     @assert fun.kind   in (:exchange, :correlation, :exchange_correlation)
     kind = Dict(:exchange => :x, :correlation => :c, :exchange_correlation => :xc)[fun.kind]
 
-    @assert fun.family in (:lda, :gga, :mgga)  # Hybrids not supported yet.
+    @assert fun.family in (:lda, :gga, :mgga, :hyb_gga)  # Hybrids not supported yet.
     if fun.family == :mgga && Libxc.needs_laplacian(fun)
         family = :mggal
     else

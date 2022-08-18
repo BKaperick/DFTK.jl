@@ -72,3 +72,15 @@ function model_SCAN(lattice::AbstractMatrix, atoms::Vector{<:Element},
                     positions::Vector{<:AbstractVector}; kwargs...)
     model_DFT(lattice, atoms, positions, [:mgga_x_scan, :mgga_c_scan]; kwargs...)
 end
+
+"""
+Build an PBE0 model from the specified atoms.
+DOI:10.1103/PhysRevLett.77.3865
+https://www.vasp.at/tutorials/latest/hybrids/part1/
+"""
+function model_PBE0(lattice::AbstractMatrix, atoms::Vector{<:Element},
+                   positions::Vector{<:AbstractVector}; kwargs...)
+    # model_DFT(lattice, atoms, positions, [:gga_x_pbe, :gga_c_pbe]; kwargs...) # [XC_]GGA_C_PBEINT - "PBE for hybrid interfaces" ? 
+    model_DFT(lattice, atoms, positions, [:hyb_gga_xc_pbeh]; kwargs...) # [XC_]GGA_C_PBEINT - "PBE for hybrid interfaces" ? 
+    # HYB_GGA_XC_PBEH
+end
