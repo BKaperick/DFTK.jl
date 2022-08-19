@@ -75,6 +75,10 @@ function DftFunctionals.potential_terms(func::LibxcFunctional{:gga}, ρ::Matrix{
     Vσ = reshape(terms.vsigma, s_σ, n_p)
     (; e, Vρ, Vσ)
 end
+function DftFunctionals.potential_terms(func::LibxcFunctional{:hyb_gga}, ρ::Matrix{Float64},
+    σ::Matrix{Float64})
+    DftFunctionas.potential_terms(func, ρ, σ);
+end
 function DftFunctionals.potential_terms(func::LibxcFunctional{:mgga}, ρ::Matrix{Float64},
                                         σ::Matrix{Float64}, τ::Matrix{Float64})
     s_ρ, n_p = size(ρ)

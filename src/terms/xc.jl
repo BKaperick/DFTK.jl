@@ -49,7 +49,7 @@ end
 
     model    = basis.model
     n_spin   = model.n_spin_components
-    @assert all(family(xc) in (:lda, :gga, :mgga, :mggal) for xc in term.functionals)
+    @assert all(family(xc) in (:lda, :gga, :mgga, :mggal, :hyb_gga) for xc in term.functionals)
 
     # Compute kinetic energy density, if needed.
     if isnothing(τ) && any(needs_τ, term.functionals)
@@ -189,6 +189,7 @@ for derivatives wrt. σ_αβ or σ_βα.
 function max_required_derivative(functional)
     family(functional) == :lda   && return 0
     family(functional) == :gga   && return 1
+    family(functional) == :hyb_gga && return 1
     family(functional) == :mgga  && return 1
     family(functional) == :mggal && return 2
     error("Functional family $(family(functional)) not known.")

@@ -81,6 +81,5 @@ https://www.vasp.at/tutorials/latest/hybrids/part1/
 function model_PBE0(lattice::AbstractMatrix, atoms::Vector{<:Element},
                    positions::Vector{<:AbstractVector}; kwargs...)
     # model_DFT(lattice, atoms, positions, [:gga_x_pbe, :gga_c_pbe]; kwargs...) # [XC_]GGA_C_PBEINT - "PBE for hybrid interfaces" ? 
-    model_DFT(lattice, atoms, positions, [:hyb_gga_xc_pbeh]; kwargs...) # [XC_]GGA_C_PBEINT - "PBE for hybrid interfaces" ? 
-    # HYB_GGA_XC_PBEH
+    model_DFT(lattice, atoms, positions, [:hyb_gga_xc_pbeh]; kwargs...) # HYB_GGA_XC_PBEH
 end
