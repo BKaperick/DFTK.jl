@@ -75,9 +75,17 @@ function DftFunctionals.potential_terms(func::LibxcFunctional{:gga}, ρ::Matrix{
     Vσ = reshape(terms.vsigma, s_σ, n_p)
     (; e, Vρ, Vσ)
 end
-function DftFunctionals.potential_terms(func::LibxcFunctional{:hyb_gga}, ρ::Matrix{Float64},
-    σ::Matrix{Float64})
-    DftFunctionas.potential_terms(func, ρ, σ);
+function DftFunctionals.potential_terms(func::LibxcFunctional{:hyb_gga,:xc}, ρ::Matrix{Float64},
+    σ::Matrix{Float64}, x1::Nothing, x2::Nothing)
+    s_ρ, n_p = size(ρ)
+    s_σ = size(σ, 1)
+    fun = Libxc.Functional(func.identifier; n_spin=s_ρ)
+    derivatives = filter(in(Libxc.supported_derivatives(fun)), 0:1)
+    terms = Libxc.evaluate(fun; rho=ρ, sigma=σ, derivatives)
+    e  = libxc_energy(terms, ρ)
+    Vρ = reshape(terms.vrho,   s_ρ, n_p)
+    Vσ = reshape(terms.vsigma, s_σ, n_p)
+    (; e, Vρ, Vσ)
 end
 function DftFunctionals.potential_terms(func::LibxcFunctional{:mgga}, ρ::Matrix{Float64},
                                         σ::Matrix{Float64}, τ::Matrix{Float64})
@@ -133,6 +141,21 @@ function DftFunctionals.kernel_terms(func::LibxcFunctional{:gga}, ρ::Matrix{Flo
     Vσσ = libxc_unfold_spin(terms.v2sigma2, s_σ)
     (; e, Vρ, Vσ, Vρρ, Vρσ, Vσσ)
 end
+function DftFunctionals.kernel_terms(func::LibxcFunctional{:hyb_gga}, ρ::Matrix{Float64},
+    σ::Matrix{Float64})
+s_ρ, n_p = size(ρ)
+s_σ = size(σ, 1)
+fun = Libxc.Functional(func.identifier; n_spin=s_ρ)
+derivatives = filter(in(Libxc.supported_derivatives(fun)), 0:2)
+terms = Libxc.evaluate(fun; rho=ρ, sigma=σ, derivatives)
+e   = libxc_energy(terms, ρ)
+Vρ  = reshape(terms.vrho,   s_ρ, n_p)
+Vσ  = reshape(terms.vsigma, s_σ, n_p)
+Vρρ = libxc_unfold_spin(terms.v2rho2,   s_ρ)
+Vρσ = permutedims(reshape(terms.v2rhosigma, s_σ, s_ρ, n_p), (2, 1, 3))
+Vσσ = libxc_unfold_spin(terms.v2sigma2, s_σ)
+(; e, Vρ, Vσ, Vρρ, Vρσ, Vσσ)
+end
 
 #
 # Automatic dispatching between Libxc (where possible) and the generic implementation
@@ -147,6 +170,7 @@ DispatchFunctional(identifier::Symbol) = DispatchFunctional(LibxcFunctional(iden
 DftFunctionals.identifier(fun::DispatchFunctional) = identifier(fun.inner)
 DftFunctionals.has_energy(fun::DispatchFunctional) = has_energy(fun.inner)
 
+# Creates the methods for DftFunctionals
 for fun in (:potential_terms, :kernel_terms)
     @eval begin
         function DftFunctionals.$fun(fun::DispatchFunctional, ρ::Matrix{Float64}, args...)
