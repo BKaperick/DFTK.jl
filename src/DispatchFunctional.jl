@@ -76,7 +76,7 @@ function DftFunctionals.potential_terms(func::LibxcFunctional{:gga}, ρ::Matrix{
     (; e, Vρ, Vσ)
 end
 function DftFunctionals.potential_terms(func::LibxcFunctional{:hyb_gga,:xc}, ρ::Matrix{Float64},
-    σ::Matrix{Float64}, x1::Nothing, x2::Nothing)
+    σ::Matrix{Float64}, args...)
     s_ρ, n_p = size(ρ)
     s_σ = size(σ, 1)
     fun = Libxc.Functional(func.identifier; n_spin=s_ρ)
@@ -141,8 +141,8 @@ function DftFunctionals.kernel_terms(func::LibxcFunctional{:gga}, ρ::Matrix{Flo
     Vσσ = libxc_unfold_spin(terms.v2sigma2, s_σ)
     (; e, Vρ, Vσ, Vρρ, Vρσ, Vσσ)
 end
-function DftFunctionals.kernel_terms(func::LibxcFunctional{:hyb_gga}, ρ::Matrix{Float64},
-    σ::Matrix{Float64})
+function DftFunctionals.kernel_terms(func::LibxcFunctional{:hyb_gga, :xc}, ρ::Matrix{Float64},
+    σ::Matrix{Float64}, args...)
 s_ρ, n_p = size(ρ)
 s_σ = size(σ, 1)
 fun = Libxc.Functional(func.identifier; n_spin=s_ρ)

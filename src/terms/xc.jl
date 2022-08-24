@@ -293,7 +293,7 @@ end
 function apply_kernel(term::TermXc, basis::PlaneWaveBasis{T}, δρ; ρ, kwargs...) where {T}
     n_spin = basis.model.n_spin_components
     isempty(term.functionals) && return nothing
-    @assert all(family(xc) in (:lda, :gga) for xc in term.functionals)
+    @assert all(family(xc) in (:lda, :gga, :hyb_gga) for xc in term.functionals)
 
     # Take derivatives of the density and the perturbation if needed.
     max_ρ_derivs = maximum(max_required_derivative, term.functionals)
